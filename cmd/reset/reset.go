@@ -45,6 +45,7 @@ func NewResetCmd() *cobra.Command {
 	}
 	cmd.SilenceUsage = true
 	cmd.PersistentFlags().AddFlagSet(config.GetPersistentFlagSet())
+	cmd.Flags().AddFlagSet(config.GetCriSocketFlag())
 	return cmd
 }
 
@@ -73,7 +74,11 @@ func (c *CmdOpts) reset() error {
 		logger.Infof("failed to uninstall k0s service: %v", err)
 	}
 	// Get Cleanup Config
-	cfg := install.NewCleanUpConfig(c.K0sVars.DataDir)
+	cfg, err := install.NewCleanUpConfig(c.K0sVars.DataDir, c.WorkerOptions.CriSocket)
+	if err != nil {
+		logger.Fatal("Failed to configure clenup: %v", err)
+		return err
+	}
 
 	if strings.Contains(role, "controller") {
 		clusterConfig, err := config.GetYamlFromFile(c.CfgFile, c.K0sVars)

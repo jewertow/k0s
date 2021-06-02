@@ -17,6 +17,7 @@ package install
 
 import (
 	"fmt"
+	"github.com/k0sproject/k0s/pkg/component/worker"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,17 +30,31 @@ import (
 	"k8s.io/mount-utils"
 )
 
-func NewCleanUpConfig(dataDir string) *CleanUpConfig {
+func NewCleanUpConfig(dataDir string, criSocketPath string) (*CleanUpConfig, error) {
 	runDir := "/run/k0s" // https://github.com/k0sproject/k0s/pull/591/commits/c3f932de85a0b209908ad39b817750efc4987395
-	criSocketPath := fmt.Sprintf("unix:///%s/containerd.sock", runDir)
+
+	var ctrd *containerd
+	var err error
+
+	if criSocketPath == "" {
+		criSocketPath = fmt.Sprintf("unix:///%s/containerd.sock", runDir)
+		ctrd = &containerd{
+			binPath:    fmt.Sprintf("%s/%s", dataDir, "bin/containerd"),
+			socketPath: fmt.Sprintf("%s/containerd.sock", runDir),
+		}
+	} else {
+		_, criSocketPath, err = worker.SplitRuntimeConfig(criSocketPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &CleanUpConfig{
-		dataDir:              dataDir,
-		runDir:               runDir,
-		containerdSockerPath: fmt.Sprintf("%s/containerd.sock", runDir),
-		containerdBinPath:    fmt.Sprintf("%s/%s", dataDir, "bin/containerd"),
-		criCtl:               crictl.NewCriCtl(criSocketPath),
-	}
+		containerd: ctrd,
+		criCtl:     crictl.NewCriCtl(criSocketPath),
+		dataDir:    dataDir,
+		runDir:     runDir,
+	}, nil
 }
 
 func (c *CleanUpConfig) cleanupMount() error {
@@ -145,29 +160,29 @@ func (c *CleanUpConfig) startContainerd() error {
 	args := []string{
 		fmt.Sprintf("--root=%s", filepath.Join(c.dataDir, "containerd")),
 		fmt.Sprintf("--state=%s", filepath.Join(c.runDir, "containerd")),
-		fmt.Sprintf("--address=%s", c.containerdSockerPath),
+		fmt.Sprintf("--address=%s", c.containerd.socketPath),
 		"--config=/etc/k0s/containerd.toml",
 	}
-	cmd := exec.Command(c.containerdBinPath, args...)
+	cmd := exec.Command(c.containerd.binPath, args...)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start containerd: %v", err)
 	}
 
-	c.containerdCmd = cmd
+	c.containerd.cmd = cmd
 	return nil
 }
 
 func (c *CleanUpConfig) stopContainerd() {
 	logrus.Debug("attempting to stop containerd")
-	logrus.Debugf("found containerd pid: %v", c.containerdCmd.Process.Pid)
-	if err := c.containerdCmd.Process.Signal(os.Interrupt); err != nil {
+	logrus.Debugf("found containerd pid: %v", c.containerd.cmd.Process.Pid)
+	if err := c.containerd.cmd.Process.Signal(os.Interrupt); err != nil {
 		logrus.Errorf("failed to kill containerd: %v", err)
 	}
 	// if process, didn't exit, wait a few seconds and send SIGKILL
-	if c.containerdCmd.ProcessState.ExitCode() != -1 {
+	if c.containerd.cmd.ProcessState.ExitCode() != -1 {
 		time.Sleep(5 * time.Second)
 
-		if err := c.containerdCmd.Process.Kill(); err != nil {
+		if err := c.containerd.cmd.Process.Kill(); err != nil {
 			logrus.Errorf("failed to send SIGKILL to containerd: %v", err)
 		}
 	}

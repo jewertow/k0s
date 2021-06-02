@@ -28,12 +28,16 @@ import (
 )
 
 type CleanUpConfig struct {
-	containerdBinPath    string
-	containerdCmd        *exec.Cmd
-	containerdSockerPath string
-	criCtl               *crictl.CriCtl
-	dataDir              string
-	runDir               string
+	containerd *containerd
+	criCtl     *crictl.CriCtl
+	dataDir    string
+	runDir     string
+}
+
+type containerd struct {
+	binPath    string
+	cmd        *exec.Cmd
+	socketPath string
 }
 
 func (c *CleanUpConfig) WorkerCleanup() error {
@@ -44,10 +48,12 @@ func (c *CleanUpConfig) WorkerCleanup() error {
 	}
 	logrus.Info("starting containerd for cleanup operations...")
 
-	if err := c.startContainerd(); err != nil {
-		return err
+	if c.containerd != nil {
+		if err := c.startContainerd(); err != nil {
+			return err
+		}
+		logrus.Info("containerd succesfully started")
 	}
-	logrus.Info("containerd succesfully started")
 
 	logrus.Info("attempting to clean up kubelet volumes...")
 	if err := c.cleanupMount(); err != nil {
@@ -80,7 +86,9 @@ func (c *CleanUpConfig) WorkerCleanup() error {
 	}
 
 	// stop containerd
-	c.stopContainerd()
+	if c.containerd != nil {
+		c.stopContainerd()
+	}
 
 	if len(msg) > 0 {
 		return fmt.Errorf("errors received during clean-up: %v", strings.Join(msg, ", "))
