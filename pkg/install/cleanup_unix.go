@@ -18,13 +18,12 @@ package install
 import (
 	"fmt"
 	"github.com/k0sproject/k0s/pkg/component/worker"
+	"github.com/k0sproject/k0s/pkg/container/runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/k0sproject/k0s/pkg/crictl"
 
 	"github.com/sirupsen/logrus"
 	"k8s.io/mount-utils"
@@ -34,7 +33,9 @@ func NewCleanUpConfig(dataDir string, criSocketPath string) (*CleanUpConfig, err
 	runDir := "/run/k0s" // https://github.com/k0sproject/k0s/pull/591/commits/c3f932de85a0b209908ad39b817750efc4987395
 
 	var ctrd *containerd
+	var containerRuntime runtime.ContainerRuntime
 	var err error
+	var runtimeType string
 
 	if criSocketPath == "" {
 		criSocketPath = fmt.Sprintf("unix:///%s/containerd.sock", runDir)
@@ -42,18 +43,24 @@ func NewCleanUpConfig(dataDir string, criSocketPath string) (*CleanUpConfig, err
 			binPath:    fmt.Sprintf("%s/%s", dataDir, "bin/containerd"),
 			socketPath: fmt.Sprintf("%s/containerd.sock", runDir),
 		}
+		runtimeType = "cri"
 	} else {
-		_, criSocketPath, err = worker.SplitRuntimeConfig(criSocketPath)
+		runtimeType, criSocketPath, err = worker.SplitRuntimeConfig(criSocketPath)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	containerRuntime, err = runtime.NewContainerRuntime(runtimeType, criSocketPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CleanUpConfig{
-		containerd: ctrd,
-		criCtl:     crictl.NewCriCtl(criSocketPath),
-		dataDir:    dataDir,
-		runDir:     runDir,
+		containerd:       ctrd,
+		containerRuntime: containerRuntime,
+		dataDir:          dataDir,
+		runDir:           runDir,
 	}, nil
 }
 
@@ -110,14 +117,14 @@ func (c *CleanUpConfig) cleanupNetworkNamespace() error {
 func (c *CleanUpConfig) stopAllContainers() error {
 	var msg []string
 
-	containers, err := c.criCtl.ListPods()
+	containers, err := c.containerRuntime.ListContainers()
 	if err != nil {
 		return err
 	}
 
 	for _, container := range containers {
 		logrus.Debugf("stopping container: %v", container)
-		err := c.criCtl.StopPod(container)
+		err := c.containerRuntime.StopContainer(container)
 		if err != nil {
 			if strings.Contains(err.Error(), "443: connect: connection refused") {
 				// on a single node instance, we will see "connection refused" error. this is to be expected
@@ -138,13 +145,13 @@ func (c *CleanUpConfig) stopAllContainers() error {
 func (c *CleanUpConfig) removeAllContainers() error {
 	var msg []string
 
-	containers, err := c.criCtl.ListPods()
+	containers, err := c.containerRuntime.ListContainers()
 	if err != nil {
 		return err
 	}
 
 	for _, container := range containers {
-		err := c.criCtl.RemovePod(container)
+		err := c.containerRuntime.RemoveContainer(container)
 		if err != nil {
 			fmtError := fmt.Errorf("failed to remove pod %v: err: %v", container, err)
 			msg = append(msg, fmtError.Error())

@@ -18,7 +18,7 @@ package install
 
 import (
 	"fmt"
-	"github.com/k0sproject/k0s/pkg/crictl"
+	"github.com/k0sproject/k0s/pkg/container/runtime"
 	"os/exec"
 	"strings"
 	"time"
@@ -28,10 +28,10 @@ import (
 )
 
 type CleanUpConfig struct {
-	containerd *containerd
-	criCtl     *crictl.CriCtl
-	dataDir    string
-	runDir     string
+	containerd       *containerd
+	containerRuntime runtime.ContainerRuntime
+	dataDir          string
+	runDir           string
 }
 
 type containerd struct {
@@ -80,7 +80,7 @@ func (c *CleanUpConfig) WorkerCleanup() error {
 		msg = append(msg, err.Error())
 	}
 
-	containers, err := c.criCtl.ListPods()
+	containers, err := c.containerRuntime.ListContainers()
 	if err == nil && len(containers) == 0 {
 		logrus.Info("successfully removed k0s containers!")
 	}
