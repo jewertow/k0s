@@ -6,9 +6,9 @@ type ContainerRuntime interface {
 	StopContainer(id string) error
 }
 
-func NewContainerRuntime(runtimeType string, criSocketPath string) (ContainerRuntime, error) {
+func NewContainerRuntime(runtimeType string, criSocketPath string) ContainerRuntime {
 	if runtimeType == "docker" {
-		return nil, nil
+		return &DockerRuntime{criSocketPath}
 	}
-	return &CRIRuntime{criSocketPath}, nil
+	return &CRIRuntime{criSocketPath}
 }

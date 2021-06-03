@@ -33,7 +33,6 @@ func NewCleanUpConfig(dataDir string, criSocketPath string) (*CleanUpConfig, err
 	runDir := "/run/k0s" // https://github.com/k0sproject/k0s/pull/591/commits/c3f932de85a0b209908ad39b817750efc4987395
 
 	var ctrd *containerd
-	var containerRuntime runtime.ContainerRuntime
 	var err error
 	var runtimeType string
 
@@ -51,14 +50,9 @@ func NewCleanUpConfig(dataDir string, criSocketPath string) (*CleanUpConfig, err
 		}
 	}
 
-	containerRuntime, err = runtime.NewContainerRuntime(runtimeType, criSocketPath)
-	if err != nil {
-		return nil, err
-	}
-
 	return &CleanUpConfig{
 		containerd:       ctrd,
-		containerRuntime: containerRuntime,
+		containerRuntime: runtime.NewContainerRuntime(runtimeType, criSocketPath),
 		dataDir:          dataDir,
 		runDir:           runDir,
 	}, nil
