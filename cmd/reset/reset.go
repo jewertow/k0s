@@ -76,7 +76,7 @@ func (c *CmdOpts) reset() error {
 	// Get Cleanup Config
 	cfg, err := install.NewCleanUpConfig(c.K0sVars.DataDir, c.WorkerOptions.CriSocket)
 	if err != nil {
-		logger.Fatalf("Failed to configure clenup: %v", err)
+		logger.Fatalf("failed to configure cleanup: %v", err)
 		return err
 	}
 
